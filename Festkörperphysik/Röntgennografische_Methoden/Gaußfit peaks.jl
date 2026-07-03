@@ -395,13 +395,17 @@ function main_fitting_process()
 
     file_paths = Dict(
         "Probe 1" => "Messdaten_Pulverdiffraktonomie/Probe1_Messdaten.xye",
-        "Probe 2" => "Messdaten_Pulverdiffraktonomie/Probe2_Messdaten.xye",
+        "Probe 2" => "Messdaten_Pulverdiffraktonomie/Probe2_Messdaten_neu.xye",
         "Probe 3" => "Messdaten_Pulverdiffraktonomie/Probe3_Messdaten.xye",
     )
 
-    for (probe_name, filepath) in file_paths
+    # === GEÄNDERTE STELLE START ===
+    # Sortiere die Schlüssel, damit die Berechnungen der Reihe nach (Probe 1, Probe 2, Probe 3) ausgeführt werden
+    for probe_name in sort(collect(keys(file_paths)))
+        filepath = file_paths[probe_name]
         fit_and_plot_peaks(probe_name, filepath, json_peak_data)
     end
+    # === GEÄNDERTE STELLE ENDE ===
 
     println("\nAlle Fitting- und Plotting-Prozesse abgeschlossen.")
     println("Prüfen Sie die Ordner 'Gefittete_Diffraktogramme_PDFs' und 'Fittergebnisse_CSV' für die Ergebnisse.")

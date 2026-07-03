@@ -44,7 +44,7 @@ end
 # --- 2. File paths for your measurements ---
 file_paths = Dict(
     "Probe 1" => "Messdaten_Pulverdiffraktonomie/Probe1_Messdaten.xye",
-    "Probe 2" => "Messdaten_Pulverdiffraktonomie/Probe2_Messdaten.xye",
+    "Probe 2" => "Messdaten_Pulverdiffraktonomie/Probe2_Messdaten_neu.xye",
     "Probe 3" => "Messdaten_Pulverdiffraktonomie/Probe3_Messdaten.xye",
 )
 
@@ -91,15 +91,20 @@ function interactive_peak_selection(probe_name::String, filepath::String, all_pr
 
             # Marker an der Oberseite des Plots hinzufügen (modernisierter Ansatz)
             # 1. Hole die aktuelle obere Y-Grenze der Achse
-            ylims = ax.limits.val
+            # === GEÄNDERTE STELLE START ===
+            ylims = ax.finallimits[] # Nutze finallimits[] statt limits.val, da limits.val (nothing, nothing) sein kann und keine origin/widths besitzt
             current_y_limit_top = ylims.origin[2] + ylims.widths[2]
+            # === GEÄNDERTE STELLE ENDE ===
 
             # 2. Erstelle den neuen Punkt
             new_marker = Point2f(clicked_2theta, current_y_limit_top * 0.95)
 
             # 3. Aktualisiere das Observable auf die empfohlene Weise
             # Dies fügt den neuen Marker zum bestehenden Array hinzu und benachrichtigt den Plot
-            plotted_markers[] = push!(plotted_markers[], new_marker)
+            # === GEÄNDERTE STELLE START ===
+            push!(plotted_markers[], new_marker)
+            notify(plotted_markers) # Nutze notify() um das Observable sauber zu aktualisieren
+            # === GEÄNDERTE STELLE ENDE ===
         end
         # Gib `Consume(false)` zurück, damit andere Interaktionen (z.B. Zoomen) weiterhin funktionieren
         return Consume(false)
@@ -120,9 +125,13 @@ end
 function main_interactive_selection()
     global_peak_data = Dict{String,Vector{Float64}}() # Dictionary zum Speichern aller Peak-Daten
 
-    for (probe_name, filepath) in file_paths
+    # === GEÄNDERTE STELLE START ===
+    # Sortiere die Schlüssel alphabetisch, damit die Proben der Reihe nach (Probe 1, Probe 2, Probe 3) geöffnet werden
+    for probe_name in sort(collect(keys(file_paths)))
+        filepath = file_paths[probe_name]
         interactive_peak_selection(probe_name, filepath, global_peak_data)
     end
+    # === GEÄNDERTE STELLE ENDE ===
 
     # Speichere die gesammelten Peak-Positionen in einer JSON-Datei
     output_json_path = "peak_positions.json"
