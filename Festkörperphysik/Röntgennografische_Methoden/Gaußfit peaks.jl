@@ -1,3 +1,7 @@
+#Erst in Get peaks den Code ausführen uns im Interactiven Fenster die peaks 
+#markieren. Dann den code hier ausführen.
+
+
 using LsqFit
 using GLMakie
 using CairoMakie      # Für statische Plots und das Speichern als PDF
@@ -8,7 +12,7 @@ using Statistics
 using CSV             # Zum Speichern von Daten in CSV-Dateien
 using DataFrames      # Zum einfachen Arbeiten mit tabellarischen Daten für CSV
 CairoMakie.activate!()      # jetzt ist CairoMakie das aktive Backend
-set_theme!(fontsize = 25) 
+set_theme!(fontsize=25)
 
 # --- 1. Hilfsfunktion zum Einlesen der .xye Daten ---
 function read_xye_data(filepath::String)
@@ -41,9 +45,8 @@ function read_xye_data(filepath::String)
 end
 
 # --- 2. Definition der Modellfunktionen ---
-
 # Eine einzelne Gaußkurve
-gaussian(x, A, mu, sigma) = A * exp.(-(x .- mu).^2 / (2 * sigma^2))
+gaussian(x, A, mu, sigma) = A * exp.(-(x .- mu) .^ 2 / (2 * sigma^2))
 
 # Lineare Basislinie
 linear_baseline(x, a, b) = a .* x .+ b
@@ -52,12 +55,13 @@ linear_baseline(x, a, b) = a .* x .+ b
 # p: Parameter für diese spezifische Gruppe von Gaußkurven UND Basislinie
 # num_gaussians: Wie viele Gaußkurven in dieser Gruppe sind
 function local_peak_model_with_baseline(x_data, p, num_gaussians::Int)
-    y_model = zeros(length(x_data))
-    
+    # BEHOBEN: Nutzt den Typ von p (z.B. ForwardDiff.Dual), statt fest Float64 vorzugeben
+    y_model = zeros(eltype(p), length(x_data))
+
     # Die letzten zwei Parameter sind für die Basislinie: a (Steigung), b (Achsenabschnitt)
     idx_baseline_a = length(p) - 1
     idx_baseline_b = length(p)
-    
+
     a_b = p[idx_baseline_a]
     b_b = p[idx_baseline_b]
 
@@ -66,9 +70,9 @@ function local_peak_model_with_baseline(x_data, p, num_gaussians::Int)
     param_idx = 1 # Startet bei den Gauß-Parametern
     for i in 1:num_gaussians
         # Sicherstellen, dass genügend Parameter für die Gaußkurve vorhanden sind
-        if param_idx + 2 > length(p) - 2 
+        if param_idx + 2 > length(p) - 2
             @warn "Nicht genügend Gauß-Parameter in 'p' für erwartete Gaußkurve $i."
-            break 
+            break
         end
         A, mu, sigma = p[param_idx], p[param_idx+1], p[param_idx+2]
         y_model .+= gaussian(x_data, A, mu, sigma)
@@ -83,13 +87,13 @@ function save_weighted_mean_results_to_csv(probe_name::String, results::Vector{<
     if !isdir(output_dir)
         mkpath(output_dir)
     end
-    
+
     filename = @sprintf("%s/%s_Gewichteter_Mittelwert.csv", output_dir, replace(probe_name, " " => "_"))
-    
+
     df = DataFrame(
-        Peak_Label = [r.peak_label for r in results],
-        Weighted_Mean_Theta = [r.weighted_mean_theta for r in results],
-        Error_Weighted_Mean_Theta = [r.error_weighted_mean_theta for r in results]
+        Peak_Label=[r.peak_label for r in results],
+        Weighted_Mean_Theta=[r.weighted_mean_theta for r in results],
+        Error_Weighted_Mean_Theta=[r.error_weighted_mean_theta for r in results]
     )
 
     try
@@ -102,7 +106,7 @@ end
 
 
 # --- 3. Hauptfunktion für Fitting und Plotting (KORRIGIERT) ---
-function fit_and_plot_peaks(probe_name::String, filepath::String, json_peak_positions::Dict)
+function fit_and_plot_peaks(probe_name::String, filepath::String, json_peak_positions::AbstractDict)
     x_obs, y_obs = read_xye_data(filepath)
 
     if x_obs === nothing || y_obs === nothing || isempty(x_obs)
@@ -125,13 +129,13 @@ function fit_and_plot_peaks(probe_name::String, filepath::String, json_peak_posi
     DEFAULT_NUM_GAUSSIANS = 2 # Standardanzahl der Gaußkurven pro Peak
 
     for mu_guess in initial_mu_guesses
-        search_range_min = mu_guess - 0.7 
-        search_range_max = mu_guess + 0.7 
-        
+        search_range_min = mu_guess - 0.7
+        search_range_max = mu_guess + 0.7
+
         idx_in_range = findall(x -> search_range_min < x < search_range_max, x_obs)
-        
+
         initial_amplitude = if isempty(idx_in_range)
-            maximum(y_obs) / 10 
+            maximum(y_obs) / 10
         else
             y_obs[idx_in_range[argmax(y_obs[idx_in_range])]] * 1.05
         end
@@ -142,38 +146,38 @@ function fit_and_plot_peaks(probe_name::String, filepath::String, json_peak_posi
         else
             clamp(mean(y_obs[idx_in_range]) * 0.1, 1e-3, Inf)
         end
-        
+
         initial_baseline_a = 0.0
 
         current_peak_range = [mu_guess - PEAK_RANGE_WIDTH_FACTOR, mu_guess + PEAK_RANGE_WIDTH_FACTOR]
-        
-        num_gaussians_for_current_peak = DEFAULT_NUM_GAUSSIANS 
+
+        num_gaussians_for_current_peak = DEFAULT_NUM_GAUSSIANS
         if abs(mu_guess - 38.02) < 0.1 # Beispiel: Spezifisch für diesen Peak
-             num_gaussians_for_current_peak = 1
+            num_gaussians_for_current_peak = 1
         end
 
         # Erstelle die initialen Parameter für diesen Peak
         initial_params = Vector{Float64}(undef, 3 * num_gaussians_for_current_peak + 2)
-        
+
         for i in 1:num_gaussians_for_current_peak
-            initial_params[3*(i-1) + 1] = initial_amplitude / (i == 1 ? 1.0 : 1.5) 
-            initial_params[3*(i-1) + 2] = mu_guess + (i - 1) * 0.05 
-            initial_params[3*(i-1) + 3] = 0.1 
+            initial_params[3*(i-1)+1] = initial_amplitude / (i == 1 ? 1.0 : 1.5)
+            initial_params[3*(i-1)+2] = mu_guess + (i - 1) * 0.05
+            initial_params[3*(i-1)+3] = 0.1
         end
-        
-        initial_params[end-1] = initial_baseline_a 
-        initial_params[end] = initial_baseline_b 
+
+        initial_params[end-1] = initial_baseline_a
+        initial_params[end] = initial_baseline_b
 
         push!(peak_configs, (
-            range_2theta = current_peak_range, 
-            num_gaussians = num_gaussians_for_current_peak,
-            initial_params = initial_params,
-            label = @sprintf("Peak bei %.2f°", mu_guess)
+            range_2theta=current_peak_range,
+            num_gaussians=num_gaussians_for_current_peak,
+            initial_params=initial_params,
+            label=@sprintf("Peak bei %.2f°", mu_guess)
         ))
     end
 
-    fitted_baselines_and_params = Dict{String, Any}() 
-    weighted_mean_theta_results = Vector{NamedTuple{(:peak_label, :weighted_mean_theta, :error_weighted_mean_theta), Tuple{String, Float64, Float64}}}()
+    fitted_baselines_and_params = Dict{String,Any}()
+    weighted_mean_theta_results = Vector{NamedTuple{(:peak_label, :weighted_mean_theta, :error_weighted_mean_theta),Tuple{String,Float64,Float64}}}()
 
 
     println("\n### Bearbeite Probe: $probe_name ###")
@@ -195,7 +199,7 @@ function fit_and_plot_peaks(probe_name::String, filepath::String, json_peak_posi
         try
             local_fit = curve_fit(local_model_func, x_local, y_local, config.initial_params, maxIter=500)
             local_fitted_params = local_fit.param
-            
+
             # --- Standardfehler aus der Kovarianzmatrix extrahieren ---
             param_errors = try
                 stderror(local_fit)
@@ -204,8 +208,8 @@ function fit_and_plot_peaks(probe_name::String, filepath::String, json_peak_posi
                 fill(NaN, length(local_fitted_params))
             end
 
-            param_idx_current_local = 1 
-            
+            param_idx_current_local = 1
+
             # Listen für unterschiedliche Zwecke:
             current_gauss_params_for_weighted_mean = [] # Für die Berechnung des gewichteten Mittelwerts und dessen Fehler
             current_gauss_params_for_plotting = []      # Für die Rekonstruktion der Gesamt-Fit-Linie im Plot
@@ -233,7 +237,7 @@ function fit_and_plot_peaks(probe_name::String, filepath::String, json_peak_posi
                 end
                 param_idx_current_local += 3
             end
-            
+
             # Speichern der Fit-Parameter für den Plot
             if !isempty(current_gauss_params_for_plotting)
                 a_baseline_fit = local_fitted_params[end-1]
@@ -250,26 +254,26 @@ function fit_and_plot_peaks(probe_name::String, filepath::String, json_peak_posi
                     weights = [g.A for g in current_gauss_params_for_weighted_mean]
                     mus_2theta = [g.mu for g in current_gauss_params_for_weighted_mean]
                     err_mus_2theta = [g.err_mu for g in current_gauss_params_for_weighted_mean]
-                    
+
                     if sum(weights) < 1e-9
                         @warn "       Summe der Amplituden für $(config.label) ist zu klein. Gewichteter Mittelwert wird nicht berechnet."
                         continue
                     end
 
                     weighted_mean_2theta = sum(mus_2theta .* weights) / sum(weights)
-                    
-                    sum_sq_weighted_errors = sum( (w^2 * err_mu^2) for (w, err_mu) in zip(weights, err_mus_2theta) )
+
+                    sum_sq_weighted_errors = sum((w^2 * err_mu^2) for (w, err_mu) in zip(weights, err_mus_2theta))
                     error_weighted_mean_2theta = sqrt(sum_sq_weighted_errors) / sum(weights)
                 end
-                
+
                 # Umrechnung nach Theta und Fehleranpassung
                 weighted_mean_theta = weighted_mean_2theta / 2.0
                 error_weighted_mean_theta = error_weighted_mean_2theta / 2.0
 
                 push!(weighted_mean_theta_results, (
-                    peak_label = config.label,
-                    weighted_mean_theta = weighted_mean_theta,
-                    error_weighted_mean_theta = error_weighted_mean_theta
+                    peak_label=config.label,
+                    weighted_mean_theta=weighted_mean_theta,
+                    error_weighted_mean_theta=error_weighted_mean_theta
                 ))
                 println("       $(config.label): Gewichteter Theta = $(@sprintf("%.4f", weighted_mean_theta))° ± $(@sprintf("%.4f", error_weighted_mean_theta))°")
             end
@@ -281,33 +285,33 @@ function fit_and_plot_peaks(probe_name::String, filepath::String, json_peak_posi
     end
 
     # --- Plotting ---
-    f = Figure(size = (1000, 700))
+    f = Figure(size=(1000, 700))
 
     min_y_data = minimum(y_obs)
     max_y_data = maximum(y_obs)
-    
+
     plot_ymin = max(0.1, min_y_data * 0.9)
     plot_ymax = max_y_data * 2
 
     ax = Axis(f[1, 1],
-        xlabel = "2θ (°)",
-        ylabel = "Intensität (log)",
-        title = "Diffraktogramm und Fit: $probe_name",
-        yscale = log10,
-        limits = (minimum(x_obs), maximum(x_obs), plot_ymin, plot_ymax) 
+        xlabel="2θ (°)",
+        ylabel="Intensität (log)",
+        title="Diffraktogramm und Fit: $probe_name",
+        yscale=log10,
+        limits=(minimum(x_obs), maximum(x_obs), plot_ymin, plot_ymax)
     )
 
     y_obs_clipped = clamp.(y_obs, 0.1, Inf)
-    lines!(ax, x_obs, y_obs_clipped, linewidth = 1.0, color = :grey, label = "Original Daten")
+    lines!(ax, x_obs, y_obs_clipped, linewidth=1.0, color=:grey, label="Original Daten")
 
-    total_fitted_y_model = fill(NaN, length(x_obs)) 
+    total_fitted_y_model = fill(NaN, length(x_obs))
 
     # Plotten der roten Fit-Linie
     for (label, fit_data) in fitted_baselines_and_params
         a_b, b_b, gauss_params_for_plot, range_start, range_end = fit_data # Hier verwenden wir die Parameter für den Plot
         idx_local_range = findall(x -> range_start <= x <= range_end, x_obs)
         x_local = x_obs[idx_local_range]
-        
+
         if !isempty(x_local)
             local_model_values = linear_baseline(x_local, a_b, b_b)
             for g in gauss_params_for_plot # Jede Gauß-Komponente für diesen Peak
@@ -316,46 +320,46 @@ function fit_and_plot_peaks(probe_name::String, filepath::String, json_peak_posi
             total_fitted_y_model[idx_local_range] = local_model_values
         end
     end
-    
+
     total_fitted_y_model_clipped = clamp.(total_fitted_y_model, 0.1, Inf)
-    lines!(ax, x_obs, total_fitted_y_model_clipped, linestyle = :dash, linewidth = 2.0, color = :red, label = "Gesamt-Fit") 
+    lines!(ax, x_obs, total_fitted_y_model_clipped, linestyle=:dash, linewidth=2.0, color=:red, label="Gesamt-Fit")
 
     # Plotten der berechneten gewichteten Mittelwerte im Diagramm
-  if !isempty(weighted_mean_theta_results)
-    final_limits = ax.finallimits[]
-    plot_ymin_actual = final_limits.origin[2]
-    plot_ymax_actual = final_limits.origin[2] + final_limits.widths[2]
+    if !isempty(weighted_mean_theta_results)
+        final_limits = ax.finallimits[]
+        plot_ymin_actual = final_limits.origin[2]
+        plot_ymax_actual = final_limits.origin[2] + final_limits.widths[2]
 
-    for res in weighted_mean_theta_results
-        weighted_mean_2theta = res.weighted_mean_theta * 2          # θ  → 2θ
+        for res in weighted_mean_theta_results
+            weighted_mean_2theta = res.weighted_mean_theta * 2          # θ  → 2θ
 
-        # Index des Datenpunkts, der der 2θ‑Position am nächsten liegt
-        _, idx_nearest = findmin(abs.(x_obs .- weighted_mean_2theta))
+            # Index des Datenpunkts, der der 2θ‑Position am nächsten liegt
+            _, idx_nearest = findmin(abs.(x_obs .- weighted_mean_2theta))
 
-        # Höhe des Fits (alternativ: y_obs_clipped[idx_nearest])
-        y_peak = total_fitted_y_model_clipped[idx_nearest]
-        text_y_pos = clamp(y_peak * 1.15,                           # 15 % darüber
-                           plot_ymin_actual * 1.05,
-                           plot_ymax_actual * 0.95)
+            # Höhe des Fits (alternativ: y_obs_clipped[idx_nearest])
+            y_peak = total_fitted_y_model_clipped[idx_nearest]
+            text_y_pos = clamp(y_peak * 1.15,                           # 15 % darüber
+                plot_ymin_actual * 1.05,
+                plot_ymax_actual * 0.95)
 
-        text!(ax,
-              @sprintf("%.2f°", weighted_mean_2theta),
-              position = (weighted_mean_2theta, text_y_pos),
-              align = (:center, :bottom),
-              color = :black,
-              fontsize = 12)
+            text!(ax,
+                @sprintf("%.2f°", weighted_mean_2theta),
+                position=(weighted_mean_2theta, text_y_pos),
+                align=(:center, :bottom),
+                color=:black,
+                fontsize=12)
+        end
     end
-end
 
 
-    axislegend(ax, [lines!(ax, [0], [0], color = :grey), lines!(ax, [0], [0], color = :red)], ["Original Daten", "Gesamt-Fit"], position = :rt)
+    axislegend(ax, [lines!(ax, [0], [0], color=:grey), lines!(ax, [0], [0], color=:red)], ["Original Daten", "Gesamt-Fit"], position=:rt)
 
     output_dir_pdfs = "Gefittete_Diffraktogramme_PDFs"
     if !isdir(output_dir_pdfs)
         mkpath(output_dir_pdfs)
     end
     filename_pdf = @sprintf("%s/%s_Fitted_Diffraktogramm.pdf", output_dir_pdfs, replace(probe_name, " " => "_"))
-    
+
     try
         CairoMakie.save(filename_pdf, f)
         println("Plot für $probe_name in $filename_pdf gespeichert.")
@@ -379,7 +383,7 @@ function main_fitting_process()
         @error "Fehler: 'peak_positions.json' wurde nicht gefunden. Bitte stelle sicher, dass die Datei existiert und korrekt formatiert ist."
         return
     end
-    
+
     json_peak_data = try
         open(json_peak_path, "r") do f
             JSON.parse(f)
@@ -390,13 +394,13 @@ function main_fitting_process()
     end
 
     file_paths = Dict(
-        "Probe 1" => "Messwerte/Probe1_exported.xye",
-        "Probe 2" => "Messwerte/Probe2_exported.xye",
-        "Probe 3" => "Messwerte/Probe3_exported.xye",
+        "Probe 1" => "Messdaten_Pulverdiffraktonomie/Probe1_Messdaten.xye",
+        "Probe 2" => "Messdaten_Pulverdiffraktonomie/Probe2_Messdaten.xye",
+        "Probe 3" => "Messdaten_Pulverdiffraktonomie/Probe3_Messdaten.xye",
     )
 
     for (probe_name, filepath) in file_paths
-        fit_and_plot_peaks(probe_name, filepath, json_peak_data) 
+        fit_and_plot_peaks(probe_name, filepath, json_peak_data)
     end
 
     println("\nAlle Fitting- und Plotting-Prozesse abgeschlossen.")
